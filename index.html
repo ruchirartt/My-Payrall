@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>Site Payroll & Attendance</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Sinhala:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg-color: #f1f5f9; }
+  body { font-family: 'Inter', 'Noto Sans Sinhala', sans-serif; background-color: var(--bg-color); -webkit-tap-highlight-color: transparent; padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+  body.dark-mode { color: #f8fafc; }
+  body.dark-mode .card-surface { background-color: #1e293b !important; border-color: #334155 !important; color: #f8fafc !important; }
+  body.dark-mode input:not([type="color"]), body.dark-mode select { background-color: #0f172a !important; border-color: #334155 !important; color: #f8fafc !important; }
+  body.dark-mode .bottom-nav { background-color: #1e293b !important; border-color: #334155 !important; }
+  .bottom-nav { padding-bottom: env(safe-area-inset-bottom); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  th, td { border: 1px solid #cbd5e1; padding: 6px; text-align: center; }
+  th { background: #f8fafc; }
+  @media print {
+    body * { visibility: hidden; }
+    #payslip-modal *, #report-modal * { visibility: visible; }
+    #payslip-modal, #report-modal { position: fixed; left: 0; top: 0; width: 100%; height: 100%; background: white !important; display: flex !important; align-items: center; justify-content: center; }
+    .no-print { display: none !important; }
+  }
+</style>
+</head>
+<body class="text-slate-800 antialiased select-none">
+<div id="splash-screen" class="fixed inset-0 z-[100] bg-slate-900 text-white flex flex-col items-center justify-center p-6 transition-opacity duration-500">
+  <div class="flex flex-col items-center text-center max-w-sm">
+    <div id="splash-logo-box" class="w-28 h-28 rounded-3xl overflow-hidden shadow-2xl border-2 border-slate-700 bg-slate-800 flex items-center justify-center mb-4">
+      <span id="splash-logo-text" class="text-emerald-400 font-bold text-2xl">SP</span>
+    </div>
+    <h1 id="splash-company-name" class="text-2xl font-bold mb-1">RN Engineering</h1>
+    <p class="text-sm text-slate-400 mb-6" data-tr="splash_sub">Daily Attendance & Salary Manager</p>
+    <div class="w-32 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+      <div id="splash-bar" class="h-full bg-emerald-500 transition-all duration-700 w-full"></div>
+    </div>
+  </div>
+</div>
+<header class="sticky top-0 z-30 bg-slate-900 text-white shadow-md px-4 py-3 flex items-center justify-between">
+  <div class="flex items-center gap-2.5">
+    <div id="header-logo-box" class="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400 font-bold text-xs overflow-hidden">SP</div>
+    <div>
+      <h1 id="header-company-name" class="text-base font-bold leading-tight">Site Payroll</h1>
+      <p id="header-subtitle" class="text-[11px] text-slate-400" data-tr="header_sub">පැමිණීම සහ වැටුප් කළමනාකරණය</p>
+    </div>
+  </div>
+  <button id="header-settings-btn" onclick="switchTab('settings')" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors" title="Settings">⚙️</button>
+</header>
+<main class="max-w-4xl mx-auto p-3 sm:p-5">
+  <section id="tab-attendance" class="space-y-4">
+    <div class="card-surface bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-2">
+        <label class="text-xs font-semibold text-slate-500 uppercase" data-tr="lbl_date">දිනය:</label>
+        <input type="date" id="att-date" onchange="renderAttendance()" class="px-3 py-2 rounded-xl border text-sm font-semibold">
+      </div>
+      <button onclick="markAllPresent()" class="px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-semibold" data-tr="btn_all_present">✓ සියල්ල පැමිණි (8h)</button>
+    </div>
+    <div class="grid grid-cols-3 gap-2.5">
+      <div class="card-surface bg-white p-3 rounded-2xl border text-center shadow-sm">
+        <div class="text-[11px] text-slate-500" data-tr="stat_present">පැමිණි ගණන</div>
+        <div id="att-stat-present" class="text-lg font-bold text-emerald-600 mt-0.5">0</div>
+      </div>
+      <div class="card-surface bg-white p-3 rounded-2xl border text-center shadow-sm">
+        <div class="text-[11px] text-slate-500" data-tr="stat_ot">මුළු OT පැය</div>
+        <div id="att-stat-ot" class="text-lg font-bold text-amber-600 mt-0.5">0 hrs</div>
+      </div>
+      <div class="card-surface bg-white p-3 rounded-2xl border text-center shadow-sm">
+        <div class="text-[11px] text-slate-500" data-tr="stat_exp">දවසේ වියදම්</div>
+        <div id="att-stat-exp" class="text-lg font-bold text-rose-600 mt-0.5">Rs. 0</div>
+      </div>
+    </div>
+    <div id="attendance-list" class="space-y-3"></div>
+  </section>
+  <section id="tab-payroll" class="hidden space-y-4">
+    <div class="card-surface bg-white rounded-2xl p-4 shadow-sm border flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-2">
+        <label class="text-xs font-semibold text-slate-500 uppercase" data-tr="lbl_month">මාසය:</label>
+        <input type="month" id="pay-month" onchange="renderPayroll()" class="px-3 py-2 rounded-xl border text-sm font-semibold">
+      </div>
+      <button onclick="exportExcel()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm" data-tr="btn_excel">Excel (.xlsx) Download</button>
+    </div>
+    <div class="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-4 shadow-md grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div><div class="text-[11px] text-slate-400" data-tr="pay_basic">මූලික වැටුප්</div><div id="pay-total-basic" class="text-base font-bold">Rs. 0</div></div>
+      <div><div class="text-[11px] text-slate-400" data-tr="pay_ot">මුළු OT මුදල</div><div id="pay-total-ot" class="text-base font-bold text-amber-400">Rs. 0</div></div>
+      <div><div class="text-[11px] text-slate-400" data-tr="pay_exp">දෛනික වියදම්</div><div id="pay-total-exp" class="text-base font-bold text-rose-400">Rs. 0</div></div>
+      <div><div class="text-[11px] text-slate-400" data-tr="pay_net">ශුද්ධ වැටුප</div><div id="pay-total-net" class="text-lg font-bold text-emerald-400">Rs. 0</div></div>
+    </div>
+    <div id="payroll-list" class="space-y-3"></div>
+  </section>
+  <section id="tab-workers" class="hidden space-y-4">
+    <div class="flex items-center justify-between">
+      <h2 class="text-base font-bold" data-tr="sec_workers">සේවක විස්තර</h2>
+      <button onclick="openWorkerModal()" class="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold" data-tr="btn_add_worker">+ අලුත් සේවකයෙක්</button>
+    </div>
+    <div id="workers-list" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+  </section>
+  <section id="tab-settings" class="hidden space-y-4">
+    <div class="flex items-center justify-between">
+      <h2 class="text-base font-bold" data-tr="sec_settings">සැකසුම් සහ සමාගමේ විස්තර</h2>
+      <button onclick="switchTab('attendance')" class="px-3 py-1.5 bg-slate-200 text-slate-700 rounded-xl text-xs font-bold" data-tr="btn_back">← ආපසු</button>
+    </div>
+    <div class="card-surface bg-white rounded-2xl p-4 shadow-sm border space-y-3">
+      <h3 class="text-sm font-bold text-slate-700" data-tr="set_lang_title">භාෂාව මාරු කරන්න (Language)</h3>
+      <div>
+        <select id="app-language" class="w-full px-3 py-2 rounded-xl border text-sm">
+          <option value="si">සිංහල (Sinhala)</option>
+          <option value="en">English (ඉංග්‍රීසි)</option>
+        </select>
+      </div>
+      <button onclick="changeLanguage()" class="w-full py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold" data-tr="btn_change_lang">භාෂාව වෙනස් කරන්න</button>
+    </div>
+    <div class="card-surface bg-white rounded-2xl p-4 shadow-sm border space-y-3">
+      <h3 class="text-sm font-bold text-slate-700" data-tr="set_comp_title">කම්පැනි නම සහ ලෝගෝ සැකසුම්</h3>
+      <div>
+        <label class="block text-xs font-semibold mb-1" data-tr="lbl_comp_name">සමාගමේ නම (Company Name)</label>
+        <input type="text" id="set-company-name" placeholder="RN Engineering" class="w-full px-3 py-2 rounded-xl border text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1" data-tr="lbl_comp_logo">කම්පැනි ලෝගෝ පින්තූරය (Logo Image)</label>
+        <input type="file" id="set-logo-file" accept="image/*" onchange="handleLogoUpload(event)" class="w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700">
+      </div>
+      <button onclick="saveCompanySettings()" class="w-full py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold" data-tr="btn_save_comp">සැකසුම් සුරකින්න</button>
+    </div>
+    <div class="card-surface bg-white rounded-2xl p-4 shadow-sm border space-y-3">
+      <h3 class="text-sm font-bold" data-tr="set_theme_title">පසුබිම් වර්ණය</h3>
+      <div class="flex flex-wrap items-center gap-3">
+        <button onclick="setBgColor('#f1f5f9', false)" class="w-9 h-9 rounded-full bg-[#f1f5f9] border-2 border-slate-300"></button>
+        <button onclick="setBgColor('#ffffff', false)" class="w-9 h-9 rounded-full bg-[#ffffff] border-2 border-slate-300"></button>
+        <button onclick="setBgColor('#eff6ff', false)" class="w-9 h-9 rounded-full bg-[#eff6ff] border-2 border-blue-200"></button>
+        <button onclick="setBgColor('#0f172a', true)" class="w-9 h-9 rounded-full bg-[#0f172a] text-white text-[10px] font-bold">Dark</button>
+      </div>
+    </div>
+  </section>
+</main>
+<nav class="bottom-nav fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-[0_-4px_15px_rgba(0,0,0,0.05)] px-3 py-1.5 grid grid-cols-3 gap-2">
+  <button onclick="switchTab('attendance')" id="nav-attendance" class="nav-btn flex flex-col items-center justify-center py-1.5 rounded-2xl bg-emerald-50 text-emerald-700 font-bold transition-all">
+    <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+    <span class="text-xs" data-tr="nav_att">පැමිණීම</span>
+  </button>
+  <button onclick="switchTab('payroll')" id="nav-payroll" class="nav-btn flex flex-col items-center justify-center py-1.5 rounded-2xl text-slate-500 font-medium transition-all">
+    <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+    <span class="text-xs" data-tr="nav_pay">වැටුප්</span>
+  </button>
+  <button onclick="switchTab('workers')" id="nav-workers" class="nav-btn flex flex-col items-center justify-center py-1.5 rounded-2xl text-slate-500 font-medium transition-all">
+    <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+    <span class="text-xs" data-tr="nav_workers">සේවකයින්</span>
+  </button>
+</nav>
+<div id="worker-modal" class="fixed inset-0 z-50 bg-black/60 hidden items-center justify-center p-3">
+  <div class="card-surface bg-white w-full max-w-lg rounded-2xl p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-between border-b pb-3">
+      <h3 id="worker-modal-title" class="text-base font-bold" data-tr="mod_worker_title">සේවක විස්තර</h3>
+      <button onclick="closeWorkerModal()" class="text-xl font-bold">&times;</button>
+    </div>
+    <input type="hidden" id="w-id">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div><label class="block text-xs font-semibold mb-1" data-tr="mod_w_name">නම *</label><input type="text" id="w-name" class="w-full px-3 py-2 rounded-xl border text-sm"></div>
+      <div><label class="block text-xs font-semibold mb-1" data-tr="mod_w_role">තනතුර</label><input type="text" id="w-role" class="w-full px-3 py-2 rounded-xl border text-sm"></div>
+      <div><label class="block text-xs font-semibold mb-1">NIC අංකය</label><input type="text" id="w-nic" class="w-full px-3 py-2 rounded-xl border text-sm"></div>
+      <div><label class="block text-xs font-semibold mb-1" data-tr="mod_w_mobile">මොබයිල් අංකය</label><input type="tel" id="w-mobile" class="w-full px-3 py-2 rounded-xl border text-sm"></div>
+      <div><label class="block text-xs font-semibold mb-1" data-tr="mod_w_rate">දෛනික වැටුප (Rs) *</label><input type="number" id="w-rate" class="w-full px-3 py-2 rounded-xl border text-sm"></div>
+      <div><label class="block text-xs font-semibold mb-1" data-tr="mod_w_ot">OT පැයක ගාස්තුව (Rs) *</label><input type="number" id="w-ot-rate" class="w-full px-3 py-2 rounded-xl border text-sm"></div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">NIC Copy</label>
+        <input type="file" id="w-nic-file" accept="image/*,.pdf" onchange="handleFileUpload(event, 'nic')" class="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700">
+        <div id="w-nic-preview" class="text-[10px] text-emerald-600 mt-1"></div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold mb-1">CV / ලියකියවිලි</label>
+        <input type="file" id="w-cv-file" accept="image/*,.pdf" onchange="handleFileUpload(event, 'cv')" class="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700">
+        <div id="w-cv-preview" class="text-[10px] text-emerald-600 mt-1"></div>
+      </div>
+    </div>
+    <div class="flex justify-end gap-2 pt-2 border-t">
+      <button onclick="closeWorkerModal()" class="px-4 py-2 border rounded-xl text-xs" data-tr="btn_cancel">අවලංගු කරන්න</button>
+      <button onclick="saveWorker()" class="px-5 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold" data-tr="btn_save">සුරකින්න</button>
+    </div>
+  </div>
+</div>
+<div id="report-modal" class="fixed inset-0 z-50 bg-black/50 hidden items-center justify-center p-3">
+  <div class="card-surface bg-white w-full max-w-md rounded-2xl p-4 shadow-xl space-y-3 max-h-[85vh] overflow-y-auto">
+    <div class="flex items-center justify-between border-b pb-2 no-print">
+      <h3 id="rep-title" class="text-sm font-bold">සේවක වාර්තාව</h3>
+      <button onclick="closeReportModal()" class="text-xl font-bold">&times;</button>
+    </div>
+    <div class="text-xs text-slate-500 no-print">
+      <span data-tr="lbl_month">මාසය:</span> <input type="month" id="rep-month" onchange="updateWorkerReport()" class="px-2 py-1 rounded border text-xs w-auto inline-block">
+    </div>
+    <div id="rep-body-container" class="space-y-2 bg-white text-slate-900 p-2 rounded-xl">
+      <div id="rep-content"></div>
+    </div>
+    <div class="flex flex-wrap justify-end gap-2 pt-2 border-t no-print">
+      <button onclick="closeReportModal()" class="px-3 py-2 border rounded-xl text-xs font-semibold" data-tr="btn_close">Close</button>
+      <button onclick="downloadReportPDF()" class="px-3.5 py-2 bg-slate-800 text-white rounded-xl text-xs font-bold" data-tr="btn_dl_pdf">📥 Download PDF</button>
+      <button id="btn-share-rep" onclick="shareReportPDF()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm" data-tr="btn_share_pdf">📤 Share PDF</button>
+    </div>
+  </div>
+</div>
+<div id="payslip-modal" class="fixed inset-0 z-50 bg-black/70 hidden items-center justify-center p-4">
+  <div class="bg-white text-slate-900 w-full max-w-md rounded-2xl p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-between border-b pb-3 no-print">
+      <span id="payslip-company-title" class="text-xs font-bold uppercase">Salary Pay Slip</span>
+      <button onclick="closePayslip()" class="text-xl font-bold">&times;</button>
+    </div>
+    <div id="payslip-content" class="space-y-3 text-sm bg-white p-2 rounded-xl"></div>
+    <div class="flex flex-wrap justify-end gap-2 pt-3 border-t no-print">
+      <button onclick="closePayslip()" class="px-3 py-2 border rounded-xl text-xs font-semibold" data-tr="btn_close">Close</button>
+      <button onclick="downloadPayslipPDF()" class="px-3.5 py-2 bg-slate-800 text-white rounded-xl text-xs font-bold" data-tr="btn_dl_pdf">📥 Download PDF</button>
+      <button id="btn-share-pdf" onclick="sharePayslipPDF()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm" data-tr="btn_share_pdf">📤 Share PDF</button>
+    </div>
+  </div>
+</div>
+<div id="update-modal" class="fixed inset-0 z-[110] bg-black/80 hidden items-center justify-center p-4">
+  <div class="bg-white text-slate-900 w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center space-y-4">
+    <div class="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-2xl font-bold">🚀</div>
+    <h3 class="text-lg font-bold">අලුත් Update එකක් ඇත!</h3>
+    <p class="text-xs text-slate-500" id="update-msg">මෙම ඇප් එක සඳහා අලුත් සංස්කරණයක් නිකුත් කර ඇත. කරුණාකර නව APK එක ඩවුන්ලෝඩ් කරගන්න.</p>
+    <a id="update-link" href="#" target="_blank" class="block w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-bold shadow-md">📥 අලුත් Update එක Download කරන්න</a>
+  </div>
+</div>
+<script>
+const APP_VERSION = "1.0";
+const VERSION_CHECK_URL = "https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/YOUR_REPO_NAME/main/version.json";
+async function checkForUpdates() {
+  try {
+    const response = await fetch(VERSION_CHECK_URL + "?t=" + Date.now());
+    if (!response.ok) return;
+    const data = await response.json();
+    if (data.version && data.version !== APP_VERSION) {
+      document.getElementById('update-msg').innerText = data.message || "අලුත් Update එකක් ඇත.";
+      document.getElementById('update-link').href = data.downloadUrl;
+      const m = document.getElementById('update-modal');
+      m.classList.remove('hidden');
+      m.classList.add('flex');
+    }
+  } catch (e) {}
+}
+const translations = {
+  si: {
+    splash_sub: "දෛනික පැමිණීම සහ වැටුප් කළමනාකරණය",
+    header_sub: "පැමිණීම සහ වැටුප් කළමනාකරණය",
+    lbl_date: "දිනය:",
+    btn_all_present: "✓ සියල්ල පැමිණි (8h)",
+    stat_present: "පැමිණි ගණන",
+    stat_ot: "මුළු OT පැය",
+    stat_exp: "දවසේ වියදම්",
+    lbl_month: "මාසය:",
+    btn_excel: "Excel (.xlsx) Download",
+    pay_basic: "මූලික වැටුප්",
+    pay_ot: "මුළු OT මුදල",
+    pay_exp: "දෛනික වියදම්",
+    pay_net: "ශුද්ධ වැටුප",
+    sec_workers: "සේවක විස්තර",
+    btn_add_worker: "+ අලුත් සේවකයෙක්",
+    sec_settings: "සැකසුම් සහ සමාගමේ විස්තර",
+    btn_back: "← ආපසු",
+    set_lang_title: "භාෂාව මාරු කරන්න (Language)",
+    btn_change_lang: "භාෂාව වෙනස් කරන්න",
+    set_comp_title: "කම්පැනි නම සහ ලෝගෝ සැකසුම්",
+    lbl_comp_name: "සමාගමේ නම (Company Name)",
+    lbl_comp_logo: "කම්පැනි ලෝගෝ පින්තූරය (Logo Image)",
+    btn_save_comp: "සැකසුම් සුරකින්න",
+    set_theme_title: "පසුබිම් වර්ණය",
+    nav_att: "පැමිණීම",
+    nav_pay: "වැටුප්",
+    nav_workers: "සේවකයින්",
+    mod_worker_title: "සේවක විස්තර",
+    mod_w_name: "නම *",
+    mod_w_role: "තනතුර",
+    mod_w_mobile: "මොබයිල් අංකය",
+    mod_w_rate: "දෛනික වැටුප (Rs) *",
+    mod_w_ot: "OT පැයක ගාස්තුව (Rs) *",
+    btn_cancel: "අවලංගු කරන්න",
+    btn_save: "සුරකින්න",
+    btn_close: "වසන්න",
+    btn_dl_pdf: "📥 PDF ඩවුන්ලෝඩ්",
+    btn_share_pdf: "📤 PDF ශෙයා කරන්න",
+    net_salary_text: "ශුද්ධ වැටුප"
+  },
+  en: {
+    splash_sub: "Daily Attendance & Salary Manager",
+    header_sub: "Attendance & Payroll Manager",
+    lbl_date: "Date:",
+    btn_all_present: "✓ All Present (8h)",
+    stat_present: "Total Present",
+    stat_ot: "Total OT Hours",
+    stat_exp: "Daily Expenses",
+    lbl_month: "Month:",
+    btn_excel: "Download Excel (.xlsx)",
+    pay_basic: "Basic Salary",
+    pay_ot: "Total OT Amount",
+    pay_exp: "Daily Expenses",
+    pay_net: "Net Salary",
+    sec_workers: "Worker Details",
+    btn_add_worker: "+ Add New Worker",
+    sec_settings: "Settings & Company Info",
+    btn_back: "← Back",
+    set_lang_title: "Change Language",
+    btn_change_lang: "Apply Language",
+    set_comp_title: "Company Name & Logo Settings",
+    lbl_comp_name: "Company Name",
+    lbl_comp_logo: "Company Logo Image",
+    btn_save_comp: "Save Settings",
+    set_theme_title: "Background Color",
+    nav_att: "Attendance",
+    nav_pay: "Payroll",
+    nav_workers: "Workers",
+    mod_worker_title: "Worker Details",
+    mod_w_name: "Name *",
+    mod_w_role: "Role",
+    mod_w_mobile: "Mobile Number",
+    mod_w_rate: "Daily Rate (Rs) *",
+    mod_w_ot: "OT Rate/hr (Rs) *",
+    btn_cancel: "Cancel",
+    btn_save: "Save",
+    btn_close: "Close",
+    btn_dl_pdf: "📥 Download PDF",
+    btn_share_pdf: "📤 Share PDF",
+    net_salary_text: "Net Salary"
+  }
+};
+let appState = {
+  lang: 'si',
+  company: { name: 'RN Engineering', logo: '' },
+  workers: [{ id: 'w1', name: 'කමල් පෙරේරා', role: 'Plumber', nic: '199214502311', mobile: '0771234567', rate: 3000, otRate: 450, nicFile: '', cvFile: '' }],
+  attendance: {},
+  deductions: {},
+  settings: { bgColor: '#f1f5f9', darkMode: false }
+};
+let currentReportWorkerId = null;
+let currentPayslipInfo = { name: '', month: '' };
+let currentReportInfo = { name: '', month: '' };
+let tempNicData = '';
+let tempCvData = '';
+let tempLogoData = '';
+function saveState() {
+  localStorage.setItem('site_payroll_state', JSON.stringify(appState));
+}
+function loadState() {
+  const saved = localStorage.getItem('site_payroll_state');
+  if (saved) { try { appState = JSON.parse(saved); } catch(e){} }
+  if(!appState.company) appState.company = { name: 'RN Engineering', logo: '' };
+  if(!appState.lang) appState.lang = 'si';
+}
+function applyLanguageText() {
+  const lang = appState.lang || 'si';
+  document.querySelectorAll('[data-tr]').forEach(el => {
+    const key = el.getAttribute('data-tr');
+    if(translations[lang][key]) {
+      el.innerText = translations[lang][key];
+    }
+  });
+  document.getElementById('app-language').value = lang;
+}
+function changeLanguage() {
+  const selectedLang = document.getElementById('app-language').value;
+  appState.lang = selectedLang;
+  saveState();
+  applyLanguageText();
+  renderAttendance();
+  renderPayroll();
+  renderWorkers();
+  alert(selectedLang === 'si' ? 'භාෂාව සිංහලට මාරු කරන ලදී!' : 'Language changed to English!');
+}
+function applyBranding() {
+  const cName = appState.company.name || 'Site Payroll';
+  const cLogo = appState.company.logo;
+  document.getElementById('header-company-name').innerText = cName;
+  const hLogoBox = document.getElementById('header-logo-box');
+  if(cLogo) { hLogoBox.innerHTML = `<img src="${cLogo}" class="w-full h-full object-cover">`; } else { hLogoBox.innerHTML = 'SP'; }
+  document.getElementById('splash-company-name').innerText = cName;
+  const sLogoBox = document.getElementById('splash-logo-box');
+  if(cLogo) { sLogoBox.innerHTML = `<img src="${cLogo}" class="w-full h-full object-cover">`; } else { sLogoBox.innerHTML = '<span class="text-emerald-400 font-bold text-2xl">SP</span>'; }
+  document.getElementById('set-company-name').value = cName;
+}
+function applySettings() {
+  document.body.style.backgroundColor = appState.settings.bgColor;
+  if (appState.settings.darkMode) document.body.classList.add('dark-mode');
+  else document.body.classList.remove('dark-mode');
+  applyBranding();
+  applyLanguageText();
+}
+function setBgColor(hex, isDark) {
+  appState.settings.bgColor = hex;
+  appState.settings.darkMode = isDark;
+  saveState();
+  applySettings();
+}
+function handleLogoUpload(event) {
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    tempLogoData = e.target.result;
+    alert(appState.lang === 'si' ? '✓ ලෝගෝ එක තෝරාගන්නා ලදී. "සැකසුම් සුරකින්න" ක්ලික් කරන්න.' : '✓ Logo selected. Click "Save Settings".');
+  };
+  reader.readAsDataURL(file);
+}
+function saveCompanySettings() {
+  const name = document.getElementById('set-company-name').value.trim();
+  if(name) appState.company.name = name;
+  if(tempLogoData) appState.company.logo = tempLogoData;
+  saveState();
+  applyBranding();
+  alert(appState.lang === 'si' ? 'සමාගමේ විස්තර සාර්ථකව සුරකින ලදී!' : 'Company settings saved successfully!');
+}
+function switchTab(tab) {
+  ['attendance', 'payroll', 'workers', 'settings'].forEach(t => {
+    document.getElementById('tab-' + t).classList.add('hidden');
+  });
+  ['attendance', 'payroll', 'workers'].forEach(t => {
+    const nav = document.getElementById('nav-' + t);
+    nav.classList.remove('bg-emerald-50', 'text-emerald-700', 'font-bold');
+    nav.classList.add('text-slate-500', 'font-medium');
+  });
+  document.getElementById('tab-' + tab).classList.remove('hidden');
+  const headerGear = document.getElementById('header-settings-btn');
+  if (tab === 'settings') {
+    headerGear.classList.add('bg-emerald-600', 'text-white');
+    headerGear.classList.remove('bg-slate-800', 'text-slate-300');
+  } else {
+    headerGear.classList.remove('bg-emerald-600', 'text-white');
+    headerGear.classList.add('bg-slate-800', 'text-slate-300');
+    const activeNav = document.getElementById('nav-' + tab);
+    if (activeNav) {
+      activeNav.classList.remove('text-slate-500', 'font-medium');
+      activeNav.classList.add('bg-emerald-50', 'text-emerald-700', 'font-bold');
+    }
+  }
+  if (tab === 'attendance') renderAttendance();
+  if (tab === 'payroll') renderPayroll();
+  if (tab === 'workers') renderWorkers();
+}
+function getAttRecord(date, workerId) {
+  if (!appState.attendance[date]) appState.attendance[date] = {};
+  if (!appState.attendance[date][workerId]) {
+    appState.attendance[date][workerId] = { status: 0, hrs: 0, ot: 0, exp: '' };
+  }
+  return appState.attendance[date][workerId];
+}
+function renderAttendance() {
+  const date = document.getElementById('att-date').value;
+  const list = document.getElementById('attendance-list');
+  list.innerHTML = '';
+  let presentCount = 0, totalOt = 0, totalExp = 0;
+  appState.workers.forEach(w => {
+    const rec = getAttRecord(date, w.id);
+    if (rec.status > 0) presentCount += rec.status;
+    totalOt += Number(rec.ot) || 0;
+    const expVal = Number(rec.exp) || 0;
+    totalExp += expVal;
+    const dayEarn = (rec.status * w.rate) + ((Number(rec.ot) || 0) * w.otRate) - expVal;
+    const card = document.createElement('div');
+    card.className = 'card-surface bg-white rounded-2xl p-3.5 shadow-sm border space-y-3';
+    card.innerHTML = `
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="font-bold text-sm flex items-center gap-2">
+            ${w.name}
+            <button onclick="openReportModal('${w.id}')" class="px-2 py-0.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded text-[11px] font-semibold border border-blue-200">📊 Report</button>
+          </div>
+          <div class="text-xs text-slate-500">${w.role || 'Worker'} • Rs.${w.rate}/day ${w.mobile ? '• <a href="tel:'+w.mobile+'" class="text-emerald-600 underline">📞 '+w.mobile+'</a>' : ''}</div>
+        </div>
+        <div class="text-right">
+          <div class="text-[10px] text-slate-400">${appState.lang==='si'?'දවසේ ශුද්ධ ඉපැයීම':'Daily Earnings'}</div>
+          <div class="text-sm font-bold ${dayEarn >= 0 ? 'text-emerald-600' : 'text-rose-600'}">Rs. ${dayEarn.toLocaleString()}</div>
+        </div>
+      </div>
+      <div class="grid grid-cols-12 gap-2 items-center pt-2 border-t">
+        <div class="col-span-5 flex gap-1">
+          <button onclick="setAttStatus('${w.id}', 1)" class="flex-1 py-1.5 rounded-lg text-xs font-bold border ${rec.status === 1 ? 'bg-emerald-600 text-white' : 'bg-slate-50'}">1</button>
+          <button onclick="setAttStatus('${w.id}', 0.5)" class="flex-1 py-1.5 rounded-lg text-xs font-bold border ${rec.status === 0.5 ? 'bg-amber-500 text-white' : 'bg-slate-50'}">0.5</button>
+          <button onclick="setAttStatus('${w.id}', 0)" class="flex-1 py-1.5 rounded-lg text-xs font-bold border ${rec.status === 0 ? 'bg-rose-600 text-white' : 'bg-slate-50'}">0</button>
+        </div>
+        <div class="col-span-2"><input type="number" step="0.5" value="${rec.hrs || ''}" placeholder="Hrs" onchange="updateHrs('${w.id}', this.value)" class="w-full px-1.5 py-1 rounded-lg border text-xs text-center font-semibold"></div>
+        <div class="col-span-2"><input type="number" step="0.5" value="${rec.ot || ''}" placeholder="OT" onchange="updateOt('${w.id}', this.value)" class="w-full px-1.5 py-1 rounded-lg border bg-amber-50/40 text-xs text-center font-bold text-amber-700"></div>
+        <div class="col-span-3"><input type="number" value="${rec.exp !== undefined ? rec.exp : ''}" placeholder="Exp Rs" onchange="updateExp('${w.id}', this.value)" class="w-full px-1.5 py-1 rounded-lg border bg-rose-50/30 text-xs text-center font-semibold text-rose-700"></div>
+      </div>`;
+    list.appendChild(card);
+  });
+  document.getElementById('att-stat-present').innerText = presentCount;
+  document.getElementById('att-stat-ot').innerText = totalOt + ' hrs';
+  document.getElementById('att-stat-exp').innerText = 'Rs. ' + totalExp.toLocaleString();
+}
+function setAttStatus(id, status) {
+  const date = document.getElementById('att-date').value;
+  const rec = getAttRecord(date, id);
+  rec.status = status;
+  rec.hrs = status === 1 ? 8 : (status === 0.5 ? 4 : 0);
+  rec.ot = 0;
+  saveState(); renderAttendance();
+}
+function updateHrs(id, val) {
+  const date = document.getElementById('att-date').value;
+  const rec = getAttRecord(date, id);
+  const hrs = parseFloat(val) || 0;
+  rec.hrs = hrs;
+  rec.status = hrs >= 8 ? 1 : (hrs > 0 ? 0.5 : 0);
+  rec.ot = hrs > 8 ? +(hrs - 8).toFixed(2) : 0;
+  saveState(); renderAttendance();
+}
+function updateOt(id, val) {
+  const date = document.getElementById('att-date').value;
+  getAttRecord(date, id).ot = parseFloat(val) || 0;
+  saveState(); renderAttendance();
+}
+function updateExp(id, val) {
+  const date = document.getElementById('att-date').value;
+  getAttRecord(date, id).exp = val === '' ? '' : (parseFloat(val) || 0);
+  saveState(); renderAttendance();
+}
+function markAllPresent() {
+  const date = document.getElementById('att-date').value;
+  appState.workers.forEach(w => {
+    const rec = getAttRecord(date, w.id);
+    rec.status = 1; rec.hrs = 8; rec.ot = 0;
+  });
+  saveState(); renderAttendance();
+}
+function handleFileUpload(event, type) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    if (type === 'nic') {
+      tempNicData = e.target.result;
+      document.getElementById('w-nic-preview').innerText = appState.lang==='si' ? '✓ NIC ගොනුව තෝරාගන්නා ලදී' : '✓ NIC file selected';
+    } else if (type === 'cv') {
+      tempCvData = e.target.result;
+      document.getElementById('w-cv-preview').innerText = appState.lang==='si' ? '✓ CV ගොනුව තෝරාගන්නා ලදී' : '✓ CV file selected';
+    }
+  };
+  reader.readAsDataURL(file);
+}
+function openReportModal(workerId) {
+  currentReportWorkerId = workerId;
+  const today = document.getElementById('att-date').value || new Date().toISOString().slice(0, 10);
+  document.getElementById('rep-month').value = today.slice(0, 7);
+  updateWorkerReport();
+  const modal = document.getElementById('report-modal');
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+}
+function closeReportModal() {
+  const modal = document.getElementById('report-modal');
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
+}
+function updateWorkerReport() {
+  const worker = appState.workers.find(x => x.id === currentReportWorkerId);
+  const month = document.getElementById('rep-month').value;
+  if (!worker) return;
+  currentReportInfo = { name: worker.name, month: month };
+  document.getElementById('rep-title').innerText = `${worker.name} - ${appState.lang==='si'?'දෛනික වාර්තාව':'Daily Report'} (${month})`;
+  let html = `
+    <div style="text-align:center; margin-bottom:10px; border-bottom:1px solid #cbd5e1; padding-bottom:6px;">
+      <div style="font-size:11px; font-weight:bold; color:#059669; text-transform:uppercase;">${appState.company.name}</div>
+      <div style="font-size:13px; font-weight:bold;">${worker.name} - ${month} (${appState.lang==='si'?'වාර්තාව':'Report'})</div>
+    </div>
+    <table>
+      <tr><th>${appState.lang==='si'?'දිනය':'Date'}</th><th>Status</th><th>OT</th><th>${appState.lang==='si'?'වියදම්':'Expenses'}</th></tr>`;
+  let totDays = 0, totOt = 0, totExp = 0;
+  const dates = Object.keys(appState.attendance).filter(d => d.startsWith(month)).sort();
+  if (dates.length === 0) {
+    html += `<tr><td colspan="4" style="padding:15px; color:#64748b;">${appState.lang==='si'?'මෙම මාසය සඳහා දත්ත නැත.':'No data found for this month.'}</td></tr>`;
+  } else {
+    dates.forEach(d => {
+      const rec = appState.attendance[d][worker.id];
+      if (rec && (rec.status > 0 || rec.ot > 0 || rec.exp > 0)) {
+        totDays += Number(rec.status) || 0;
+        totOt += Number(rec.ot) || 0;
+        totExp += Number(rec.exp) || 0;
+        html += `<tr>
+          <td>${d}</td>
+          <td><b>${rec.status}</b></td>
+          <td>${rec.ot > 0 ? rec.ot + 'h' : '-'}</td>
+          <td>${rec.exp > 0 ? 'Rs.' + rec.exp.toLocaleString() : '-'}</td>
+        </tr>`;
+      }
+    });
+  }
+  html += `</table>
+    <div style="margin-top:10px; background:#f8fafc; padding:8px; border-radius:8px; font-size:12px;">
+      <div><b>${appState.lang==='si'?'මුළු දින':'Total Days'}:</b> ${totDays} | <b>${appState.lang==='si'?'OT පැය':'OT'}:</b> ${totOt}h | <b>${appState.lang==='si'?'වියදම්':'Exp'}:</b> Rs.${totExp.toLocaleString()}</div>
+    </div>`;
+  document.getElementById('rep-content').innerHTML = html;
+}
+function getPdfOptions(fileName) {
+  return {
+    margin: 10,
+    filename: fileName,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: 'mm', format: 'a5', orientation: 'portrait' }
+  };
+}
+function downloadReportPDF() {
+  const el = document.getElementById('rep-body-container');
+  const safeName = currentReportInfo.name.replace(/[^a-zA-Z0-9_\u0D80-\u0DFF]/g, '_');
+  const fileName = `Attendance_Report_${safeName}_${currentReportInfo.month}.pdf`;
+  if (typeof html2pdf !== 'undefined') {
+    html2pdf().set(getPdfOptions(fileName)).from(el).save();
+  } else {
+    window.print();
+  }
+}
+async function shareReportPDF() {
+  const el = document.getElementById('rep-body-container');
+  const safeName = currentReportInfo.name.replace(/[^a-zA-Z0-9_\u0D80-\u0DFF]/g, '_');
+  const fileName = `Attendance_Report_${safeName}_${currentReportInfo.month}.pdf`;
+  const shareBtn = document.getElementById('btn-share-rep');
+  const origText = shareBtn.innerText;
+  if (typeof html2pdf === 'undefined') {
+    window.print();
+    return;
+  }
+  try {
+    shareBtn.innerText = '⏳...';
+    shareBtn.disabled = true;
+    const pdfBlob = await html2pdf().set(getPdfOptions(fileName)).from(el).outputPdf('blob');
+    const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+    if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+      await navigator.share({
+        title: `Attendance Report - ${currentReportInfo.name}`,
+        text: `${appState.company.name} - Attendance Report (${currentReportInfo.month})`,
+        files: [pdfFile]
+      });
+    } else {
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      downloadReportPDF();
+    }
+  } finally {
+    shareBtn.innerText = origText;
+    shareBtn.disabled = false;
+  }
+}
+function calculateMonthlyPayroll(monthStr) {
+  return appState.workers.map(w => {
+    let workingDays = 0, otHours = 0, dailyExpenses = 0;
+    Object.keys(appState.attendance).forEach(dateKey => {
+      if (dateKey.startsWith(monthStr)) {
+        const rec = appState.attendance[dateKey][w.id];
+        if (rec) {
+          workingDays += Number(rec.status) || 0;
+          otHours += Number(rec.ot) || 0;
+          dailyExpenses += Number(rec.exp) || 0;
+        }
+      }
+    });
+    const extraDed = (appState.deductions[monthStr] && Number(appState.deductions[monthStr][w.id])) || 0;
+    const basicPay = workingDays * w.rate;
+    const otPay = otHours * w.otRate;
+    const netSalary = basicPay + otPay - dailyExpenses - extraDed;
+    return { worker: w, workingDays, otHours, basicPay, otPay, dailyExpenses, extraDed, netSalary };
+  });
+}
+function renderPayroll() {
+  const month = document.getElementById('pay-month').value;
+  const data = calculateMonthlyPayroll(month);
+  const list = document.getElementById('payroll-list');
+  list.innerHTML = '';
+  let sumBasic = 0, sumOt = 0, sumExp = 0, sumNet = 0;
+  data.forEach(item => {
+    sumBasic += item.basicPay; sumOt += item.otPay; sumExp += item.dailyExpenses; sumNet += item.netSalary;
+    const card = document.createElement('div');
+    card.className = 'card-surface bg-white rounded-2xl p-4 shadow-sm border space-y-3';
+    card.innerHTML = `
+      <div class="flex items-start justify-between">
+        <div>
+          <div class="font-bold text-base flex items-center gap-2">
+            ${item.worker.name}
+            <button onclick="openReportModal('${item.worker.id}')" class="px-2 py-0.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded text-[11px] font-semibold border border-blue-200">📊 Report</button>
+          </div>
+          <div class="text-xs text-slate-500">Day: Rs.${item.worker.rate} • OT: Rs.${item.worker.otRate}/hr</div>
+        </div>
+        <button onclick="openPayslip('${item.worker.id}')" class="px-3 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-semibold">🧾 Pay Slip</button>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 p-2.5 rounded-xl text-xs">
+        <div><span class="text-slate-400 block text-[10px]">${appState.lang==='si'?'දින':'Days'}</span><span class="font-bold">${item.workingDays}</span></div>
+        <div><span class="text-slate-400 block text-[10px]">${appState.lang==='si'?'මූලික වැටුප':'Basic'}</span><span class="font-bold">Rs. ${item.basicPay.toLocaleString()}</span></div>
+        <div><span class="text-slate-400 block text-[10px]">OT (${item.otHours}h)</span><span class="font-bold text-amber-600">+Rs. ${item.otPay.toLocaleString()}</span></div>
+        <div><span class="text-slate-400 block text-[10px]">${appState.lang==='si'?'වියදම්':'Expenses'}</span><span class="font-bold text-rose-600">-Rs. ${item.dailyExpenses.toLocaleString()}</span></div>
+      </div>
+      <div class="flex items-center justify-between pt-1">
+        <div class="flex items-center gap-2"><span class="text-xs text-slate-500">${appState.lang==='si'?'අඩුකිරීම්':'Deductions'}:</span><input type="number" value="${item.extraDed || ''}" placeholder="0" onchange="updateExtraDed('${item.worker.id}', this.value)" class="w-24 px-2 py-1 rounded-lg border text-xs font-semibold"></div>
+        <div class="text-right"><span class="text-[11px] text-slate-400 block">${appState.lang==='si'?'ශුද්ධ වැටුප':'Net Salary'}</span><span class="text-base font-bold text-emerald-600">Rs. ${item.netSalary.toLocaleString()}</span></div>
+      </div>`;
+    list.appendChild(card);
+  });
+  document.getElementById('pay-total-basic').innerText = 'Rs. ' + sumBasic.toLocaleString();
+  document.getElementById('pay-total-ot').innerText = 'Rs. ' + sumOt.toLocaleString();
+  document.getElementById('pay-total-exp').innerText = 'Rs. ' + sumExp.toLocaleString();
+  document.getElementById('pay-total-net').innerText = 'Rs. ' + sumNet.toLocaleString();
+}
+function updateExtraDed(id, val) {
+  const month = document.getElementById('pay-month').value;
+  if (!appState.deductions[month]) appState.deductions[month] = {};
+  appState.deductions[month][id] = parseFloat(val) || 0;
+  saveState(); renderPayroll();
+}
+function exportExcel() {
+  const month = document.getElementById('pay-month').value;
+  const data = calculateMonthlyPayroll(month);
+  const thinBorder = { top: { style: 'thin', color: { rgb: '94A3B8' } }, bottom: { style: 'thin', color: { rgb: '94A3B8' } }, left: { style: 'thin', color: { rgb: '94A3B8' } }, right: { style: 'thin', color: { rgb: '94A3B8' } } };
+  const titleStyle = { font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '0F172A' } }, alignment: { horizontal: 'center', vertical: 'center' }, border: thinBorder };
+  const subBoldCenter = { font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '0F172A' } }, fill: { fgColor: { rgb: 'F1F5F9' } }, alignment: { horizontal: 'center', vertical: 'center' }, border: thinBorder };
+  const subValCenter = { font: { name: 'Calibri', sz: 11, bold: false, color: { rgb: '1E293B' } }, fill: { fgColor: { rgb: 'F8FAFC' } }, alignment: { horizontal: 'center', vertical: 'center' }, border: thinBorder };
+  const headerStyle = { font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '059669' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: thinBorder };
+  const centerCell = { font: { name: 'Calibri', sz: 11, color: { rgb: '0F172A' } }, alignment: { horizontal: 'center', vertical: 'center' }, border: thinBorder };
+  const leftCell = { font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '0F172A' } }, alignment: { horizontal: 'left', vertical: 'center' }, border: thinBorder };
+  const numCell = { font: { name: 'Calibri', sz: 11, color: { rgb: '0F172A' } }, alignment: { horizontal: 'center', vertical: 'center' }, numFmt: '#,##0.00', border: thinBorder };
+  const netCell = { font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '065F46' } }, fill: { fgColor: { rgb: 'ECFDF5' } }, alignment: { horizontal: 'center', vertical: 'center' }, numFmt: '#,##0.00', border: thinBorder };
+  const totalLabelStyle = { font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '0F172A' } }, fill: { fgColor: { rgb: 'E2E8F0' } }, alignment: { horizontal: 'center', vertical: 'center' }, border: thinBorder };
+  const totalNumStyle = { font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '0F172A' } }, fill: { fgColor: { rgb: 'E2E8F0' } }, alignment: { horizontal: 'center', vertical: 'center' }, numFmt: '#,##0.00', border: thinBorder };
+  const totalNetStyle = { font: { name: 'Calibri', sz: 12, bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '059669' } }, alignment: { horizontal: 'center', vertical: 'center' }, numFmt: '#,##0.00', border: thinBorder };
+  const aoa = [];
+  const r0 = [{ v: (appState.company.name || 'Site Payroll').toUpperCase() + ' - MONTHLY PAYROLL SUMMARY REPORT', s: titleStyle }];
+  for (let c = 1; c <= 10; c++) r0.push({ v: '', s: titleStyle });
+  aoa.push(r0);
+  aoa.push([
+    { v: 'Month:', s: subBoldCenter }, { v: month, s: subValCenter }, { v: '', s: subValCenter }, { v: '', s: subValCenter }, { v: '', s: subValCenter }, { v: '', s: subValCenter }, { v: '', s: subValCenter }, { v: '', s: subValCenter }, { v: 'Generated:', s: subBoldCenter }, { v: new Date().toLocaleDateString(), s: subValCenter }, { v: '', s: subValCenter }
+  ]);
+  aoa.push([]);
+  const headers = ['No.', 'Employee Name', 'Working Days', 'Day Rate (Rs.)', 'Basic Salary (Rs.)', 'OT Hours', 'OT Rate (Rs.)', 'OT Amount (Rs.)', 'Daily Expenses (Rs.)', 'Other Deductions (Rs.)', 'Net Salary (Rs.)'];
+  aoa.push(headers.map(h => ({ v: h, s: headerStyle })));
+  let tDays = 0, tBasic = 0, tOtHrs = 0, tOtAmt = 0, tExp = 0, tDed = 0, tNet = 0;
+  data.forEach((item, idx) => {
+    tDays += item.workingDays; tBasic += item.basicPay; tOtHrs += item.otHours; tOtAmt += item.otPay; tExp += item.dailyExpenses; tDed += item.extraDed; tNet += item.netSalary;
+    aoa.push([
+      { v: idx + 1, s: centerCell }, { v: item.worker.name, s: leftCell }, { v: item.workingDays, s: centerCell }, { v: item.worker.rate, s: numCell }, { v: item.basicPay, s: numCell }, { v: item.otHours, s: centerCell }, { v: item.worker.otRate, s: numCell }, { v: item.otPay, s: numCell }, { v: item.dailyExpenses, s: numCell }, { v: item.extraDed, s: numCell }, { v: item.netSalary, s: netCell }
+    ]);
+  });
+  aoa.push([
+    { v: '', s: totalLabelStyle }, { v: 'TOTAL', s: totalLabelStyle }, { v: tDays, s: totalLabelStyle }, { v: '', s: totalLabelStyle }, { v: tBasic, s: totalNumStyle }, { v: tOtHrs, s: totalLabelStyle }, { v: '', s: totalLabelStyle }, { v: tOtAmt, s: totalNumStyle }, { v: tExp, s: totalNumStyle }, { v: tDed, s: totalNumStyle }, { v: tNet, s: totalNetStyle }
+  ]);
+  if (typeof XLSX !== 'undefined') {
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }, { s: { r: 1, c: 1 }, e: { r: 1, c: 2 } }, { s: { r: 1, c: 9 }, e: { r: 1, c: 10 } }];
+    ws['!cols'] = [{ wch: 7 }, { wch: 28 }, { wch: 15 }, { wch: 16 }, { wch: 18 }, { wch: 13 }, { wch: 15 }, { wch: 18 }, { wch: 20 }, { wch: 22 }, { wch: 20 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Payroll_' + month);
+    XLSX.writeFile(wb, `Payroll_Report_${month}.xlsx`);
+  }
+}
+function openPayslip(id) {
+  const month = document.getElementById('pay-month').value;
+  const item = calculateMonthlyPayroll(month).find(x => x.worker.id === id);
+  if (!item) return;
+  currentPayslipInfo = { name: item.worker.name, month: month };
+  document.getElementById('payslip-company-title').innerText = appState.company.name;
+  document.getElementById('payslip-content').innerHTML = `
+    <div class="text-center border-b pb-3">
+      <div class="text-xs font-bold text-emerald-700 uppercase tracking-wider">${appState.company.name}</div>
+      <h2 class="text-lg font-bold">SALARY PAY SLIP</h2>
+      <p class="text-xs text-slate-500">Month: ${month}</p>
+    </div>
+    <div class="space-y-1 text-xs border-b pb-3">
+      <div class="flex justify-between"><span class="text-slate-500">Employee Name:</span><span class="font-bold">${item.worker.name}</span></div>
+      ${item.worker.role ? `<div class="flex justify-between"><span class="text-slate-500">Role:</span><span>${item.worker.role}</span></div>` : ''}
+      <div class="flex justify-between"><span class="text-slate-500">Day Rate:</span><span>Rs. ${item.worker.rate.toLocaleString()}</span></div>
+      <div class="flex justify-between"><span class="text-slate-500">OT Rate:</span><span>Rs. ${item.worker.otRate.toLocaleString()}/hr</span></div>
+    </div>
+    <div class="space-y-1.5 text-xs">
+      <div class="flex justify-between"><span>Basic (${item.workingDays} Days)</span><span>Rs. ${item.basicPay.toLocaleString()}</span></div>
+      <div class="flex justify-between"><span>OT (${item.otHours} Hrs)</span><span class="text-emerald-700">+ Rs. ${item.otPay.toLocaleString()}</span></div>
+      <div class="flex justify-between"><span>Daily Expenses</span><span class="text-rose-600">- Rs. ${item.dailyExpenses.toLocaleString()}</span></div>
+      ${item.extraDed > 0 ? `<div class="flex justify-between"><span>Other Deductions</span><span class="text-rose-600">- Rs. ${item.extraDed.toLocaleString()}</span></div>` : ''}
+    </div>
+    <div class="bg-slate-100 p-3 rounded-xl flex justify-between font-bold text-base"><span>NET SALARY</span><span class="text-emerald-700">Rs. ${item.netSalary.toLocaleString()}</span></div>`;
+  const m = document.getElementById('payslip-modal'); m.classList.remove('hidden'); m.classList.add('flex');
+}
+function closePayslip() { document.getElementById('payslip-modal').classList.add('hidden'); document.getElementById('payslip-modal').classList.remove('flex'); }
+function downloadPayslipPDF() {
+  const el = document.getElementById('payslip-content');
+  const safeName = currentPayslipInfo.name.replace(/[^a-zA-Z0-9_\u0D80-\u0DFF]/g, '_');
+  const fileName = `PaySlip_${safeName}_${currentPayslipInfo.month}.pdf`;
+  if (typeof html2pdf !== 'undefined') {
+    html2pdf().set(getPdfOptions(fileName)).from(el).save();
+  } else {
+    window.print();
+  }
+}
+async function sharePayslipPDF() {
+  const el = document.getElementById('payslip-content');
+  const safeName = currentPayslipInfo.name.replace(/[^a-zA-Z0-9_\u0D80-\u0DFF]/g, '_');
+  const fileName = `PaySlip_${safeName}_${currentPayslipInfo.month}.pdf`;
+  const shareBtn = document.getElementById('btn-share-pdf');
+  const origText = shareBtn.innerText;
+  if (typeof html2pdf === 'undefined') { window.print(); return; }
+  try {
+    shareBtn.innerText = '⏳...';
+    shareBtn.disabled = true;
+    const pdfBlob = await html2pdf().set(getPdfOptions(fileName)).from(el).outputPdf('blob');
+    const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+    if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+      await navigator.share({
+        title: `Salary Pay Slip - ${currentPayslipInfo.name}`,
+        text: `${appState.company.name} - Salary Pay Slip (${currentPayslipInfo.month})`,
+        files: [pdfFile]
+      });
+    } else {
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') { downloadPayslipPDF(); }
+  } finally {
+    shareBtn.innerText = origText;
+    shareBtn.disabled = false;
+  }
+}
+function renderWorkers() {
+  const list = document.getElementById('workers-list');
+  list.innerHTML = '';
+  appState.workers.forEach(w => {
+    const card = document.createElement('div');
+    card.className = 'card-surface bg-white rounded-2xl p-4 shadow-sm border space-y-3';
+    card.innerHTML = `
+      <div class="flex items-start justify-between">
+        <div>
+          <h3 class="font-bold text-base flex items-center gap-2">
+            ${w.name}
+            <button onclick="openReportModal('${w.id}')" class="px-2 py-0.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded text-[11px] font-semibold border border-blue-200">📊 Report</button>
+          </h3>
+          <p class="text-xs text-slate-500">${w.role || 'Worker'} ${w.nic ? '• NIC: ' + w.nic : ''}</p>
+        </div>
+        <div class="flex gap-1.5">
+          <button onclick="openWorkerModal('${w.id}')" class="p-1.5 bg-slate-100 text-xs rounded-lg">${appState.lang==='si'?'සංස්කරණය':'Edit'}</button>
+          <button onclick="deleteWorker('${w.id}')" class="p-1.5 bg-rose-50 text-rose-600 text-xs rounded-lg">${appState.lang==='si'?'මකන්න':'Del'}</button>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 text-xs">
+        ${w.mobile ? '<a href="tel:'+w.mobile+'" class="px-3 py-1.5 bg-emerald-50 text-emerald-700 border rounded-xl font-bold">📞 '+w.mobile+'</a>' : ''}
+        <span class="px-2.5 py-1.5 bg-slate-100 rounded-xl font-semibold">Day: Rs.${w.rate}</span>
+        <span class="px-2.5 py-1.5 bg-amber-50 text-amber-700 rounded-xl font-semibold">OT: Rs.${w.otRate}</span>
+        ${w.nicFile ? '<a href="'+w.nicFile+'" target="_blank" class="px-2.5 py-1.5 bg-indigo-50 text-indigo-700 rounded-xl font-semibold underline">🪪 NIC</a>' : ''}
+        ${w.cvFile ? '<a href="'+w.cvFile+'" target="_blank" class="px-2.5 py-1.5 bg-purple-50 text-purple-700 rounded-xl font-semibold underline">📄 CV</a>' : ''}
+      </div>`;
+    list.appendChild(card);
+  });
+}
+function openWorkerModal(id = null) {
+  tempNicData = ''; tempCvData = '';
+  document.getElementById('w-nic-file').value = '';
+  document.getElementById('w-cv-file').value = '';
+  document.getElementById('w-nic-preview').innerText = '';
+  document.getElementById('w-cv-preview').innerText = '';
+  if (id) {
+    const w = appState.workers.find(x => x.id === id);
+    document.getElementById('worker-modal-title').innerText = appState.lang==='si'?'සේවක විස්තර සංස්කරණය':'Edit Worker';
+    document.getElementById('w-id').value = w.id;
+    document.getElementById('w-name').value = w.name;
+    document.getElementById('w-role').value = w.role || '';
+    document.getElementById('w-nic').value = w.nic || '';
+    document.getElementById('w-mobile').value = w.mobile || '';
+    document.getElementById('w-rate').value = w.rate;
+    document.getElementById('w-ot-rate').value = w.otRate;
+    tempNicData = w.nicFile || '';
+    tempCvData = w.cvFile || '';
+    if (w.nicFile) document.getElementById('w-nic-preview').innerText = appState.lang==='si'?'✓ පවතින NIC ගොනුව ඇත':'✓ NIC file attached';
+    if (w.cvFile) document.getElementById('w-cv-preview').innerText = appState.lang==='si'?'✓ පවතින CV ගොනුව ඇත':'✓ CV file attached';
+  } else {
+    document.getElementById('worker-modal-title').innerText = appState.lang==='si'?'අලුත් සේවකයෙක් එකතු කරන්න':'Add New Worker';
+    document.getElementById('w-id').value = ''; 
+    document.getElementById('w-name').value = '';
+    document.getElementById('w-role').value = ''; 
+    document.getElementById('w-nic').value = '';
+    document.getElementById('w-mobile').value = ''; 
+    document.getElementById('w-rate').value = '';
+    document.getElementById('w-ot-rate').value = '';
+  }
+  const m = document.getElementById('worker-modal'); 
+  m.classList.remove('hidden'); m.classList.add('flex');
+}
+function closeWorkerModal() { 
+  document.getElementById('worker-modal').classList.add('hidden'); 
+  document.getElementById('worker-modal').classList.remove('flex'); 
+}
+function saveWorker() {
+  const id = document.getElementById('w-id-input')?.value || document.getElementById('w-id').value;
+  const name = document.getElementById('w-name').value.trim();
+  const role = document.getElementById('w-role').value.trim();
+  const nic = document.getElementById('w-nic').value.trim();
+  const mobile = document.getElementById('w-mobile').value.trim();
+  const rate = parseFloat(document.getElementById('w-rate').value) || 0;
+  const otRate = parseFloat(document.getElementById('w-ot-rate').value) || 0;
+  if (!name || rate <= 0) { alert(appState.lang==='si'?'නම සහ දෛනික වැටුප ඇතුළත් කරන්න.':'Please enter name and daily rate.'); return; }
+  let workerObj = { id: id || 'w_' + Date.now(), name, role, nic, mobile, rate, otRate, nicFile: tempNicData, cvFile: tempCvData };
+  if (id) {
+    const idx = appState.workers.findIndex(x => x.id === id);
+    if (idx !== -1) {
+      if (!tempNicData) workerObj.nicFile = appState.workers[idx].nicFile || '';
+      if (!tempCvData) workerObj.cvFile = appState.workers[idx].cvFile || '';
+      appState.workers[idx] = workerObj;
+    }
+  } else {
+    appState.workers.push(workerObj);
+  }
+  saveState(); closeWorkerModal(); renderWorkers();
+}
+function deleteWorker(id) {
+  if (!confirm(appState.lang==='si'?'මෙම සේවකයා ඉවත් කිරීමට අවශ්‍යද?':'Are you sure to delete this worker?')) return;
+  appState.workers = appState.workers.filter(x => x.id !== id);
+  saveState(); renderWorkers();
+}
+window.addEventListener('DOMContentLoaded', () => {
+  loadState();
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('att-date').value = today;
+  document.getElementById('pay-month').value = today.slice(0, 7);
+  applySettings();
+  setTimeout(() => {
+    const splash = document.getElementById('splash-screen');
+    splash.classList.add('opacity-0');
+    setTimeout(() => splash.classList.add('hidden'), 500);
+  }, 800);
+  renderAttendance();
+  checkForUpdates();
+});
+</script>
+</body>
+</html>
